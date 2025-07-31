@@ -13,6 +13,7 @@ import selectors
 import struct
 from queue import Empty, Full
 
+from typing import Any
 from abc import ABC, abstractmethod
 
 from protocol import MsgTypes, decode_msg, create_msg 
@@ -82,7 +83,7 @@ class NetQueueServer(ABC):
 
         # [Dict<str><*>] - dictionary of config values
         #   Comes with some default values (see below)
-        self.config = {
+        self.config : dict[str, Any] = {
             # [int] - maximum number of bytes to be recv'd at once
             "max_recv_size": 4096,
         }
@@ -91,12 +92,12 @@ class NetQueueServer(ABC):
 
 
     @abstractmethod
-    def load_config(self, config_file: str):
+    def load_config(self, config_file: str): 
         '''
             Handles loading the configuration for the server
             into the "config" dict
         '''
-        return NotImplemented
+        raise NotImplementedError()
 
 
     @abstractmethod
@@ -107,7 +108,7 @@ class NetQueueServer(ABC):
 
             Returns None if no clients are available
         '''
-        return NotImplemented
+        raise NotImplementedError()
 
 
     def get_status(self) -> str | None:

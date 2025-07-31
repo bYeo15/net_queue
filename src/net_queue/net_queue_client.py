@@ -62,7 +62,7 @@ class NetQueueClient(ABC):
             Handles loading the configuration for the client
             into the "config" dict
         '''
-        return NotImplemented
+        raise NotImplementedError()
 
 
     def get_status(self) -> str | None:
