@@ -125,6 +125,13 @@ class NetQueueServer(ABC):
         return None
 
 
+    def get_clients(self) -> list[ClientConn]:
+        '''
+            Fetches the list of clients
+        '''
+        return self.clients
+
+
     def get_status(self) -> str | None:
         '''
             Returns a string describing the status of this client
