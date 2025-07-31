@@ -29,6 +29,8 @@ class ClientConn():
               super().__init()
             - Loads default values for status information 
               (to be updated by a STATUS message)
+
+        Supports is_ready() to check if the client is available to receive messages
     '''
     def __init__(self, sock: socket.socket):
         # [socket] - the socket associated with this client connection
@@ -43,6 +45,13 @@ class ClientConn():
     def close(self):
         self.sock.close()
 
+    def is_ready(self):
+        '''
+            Determines if this client is available to receive messages
+            To be overriden as relevant
+        '''
+        return True
+
 
 class NetQueueServer(ABC):
     '''
@@ -55,6 +64,9 @@ class NetQueueServer(ABC):
         TODO: Use state to handle events/prevent premature usage
         TODO: Local put waiting queue
     '''
+
+    # [object] - singleton representing targetting all clients for put_to()
+    TARG_ALL = object()
     
     def __init__(self, client_type: type, config_file: str = "./server_conf"):
         # [List<*>] - local backlog of received messages
@@ -100,15 +112,17 @@ class NetQueueServer(ABC):
         raise NotImplementedError()
 
 
-    @abstractmethod
     def choose_dispatch(self) -> ClientConn | None:
         '''
             Handles the selection of a client from self.clients to
             send a message to
 
             Returns None if no clients are available
+
+            Defaults to returning None, under the assumption that dispatch
+            will not be used (ie. put_to will be used)
         '''
-        raise NotImplementedError()
+        return None
 
 
     def get_status(self) -> str | None:
@@ -158,6 +172,7 @@ class NetQueueServer(ABC):
         client = ClientConn(conn)
         self.clients.append(client)
         self.client_sel.register(conn, selectors.EVENT_READ, client)
+        self.state = "connected"
 
     
     def get(self, block: bool = True, timeout: int | None = None, allow_none: bool = True):
@@ -225,25 +240,44 @@ class NetQueueServer(ABC):
             locally
         '''
         if send_all:
+            self.put_to(msg, target=NetQueueServer.TARG_ALL, block=block, timeout=timeout)
+        else:
+            target = self.choose_dispatch()
+            if target: 
+                self.put_to(msg, target=target, block=block, timeout=timeout)
+            else:
+                raise Full("No available clients to put message to")
+
+
+    def put_to(self, msg, target, block: bool = False, timeout: int | None = None):
+        '''
+            Dispatches a method to a known target
+        '''
+        if target is NetQueueServer.TARG_ALL:
             for client in self.clients:
                 client.sendall(msg)
         else:
-            timeout_remaining = timeout
-            while not self.clients or self.clients[0].avail_workers <= 0:
-                if not block or (timeout_remaining is not None and timeout_remaining <= 0.0):
-                    raise Full("No available clients to put message to")
-                poll_start = time.time()
-
-                self.poll(block=True, timeout=timeout_remaining)
-
-                if timeout_remaining is not None:
-                    timeout_remaining -= (time.time() - poll_start)
-
-            target = self.choose_dispatch()
-            if target: 
-                target.sendall(msg)
+            if block:
+                if client.is_ready():
+                    client.sendall(msg)
+                else:
+                    raise Full(f"Target client {target} is not available for put_to")
             else:
-                raise Full("No available clients to put message to")
+                timeout_remaining = timeout
+                while not client.is_ready() and (timeout_remaining is None or timeout_remaining > 0.0):
+                    poll_start = time.time()
+
+                    self.poll(block=True, timeout=timeout_remaining)
+
+                    if timeout_remaining is not None:
+                        timeout_remaining -= (time.time() - poll_start)
+
+                if client.is_ready():
+                    client.sendall(msg)
+                else:
+                    raise Full(f"Target client {target} is not available for put_to")
+
+
 
 
     def close(self):

@@ -15,6 +15,7 @@ import struct
 from queue import Empty, Full
 
 from abc import ABC, abstractmethod
+from typing import Any
 
 from protocol import MsgTypes, decode_msg, create_msg
 
@@ -47,7 +48,7 @@ class NetQueueClient(ABC):
 
         # [Dict<str><*>] - dictionary of config values
         #   Comes with some default values (see below)
-        self.config = {
+        self.config : dict[str, Any] = {
             # [int] - maximum number of bytes to be recv'd at once
             "max_recv_size": 4096,
             

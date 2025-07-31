@@ -64,6 +64,7 @@ The server manages a pool of clients to which it can dispatch messages.
 A server is passed a client type and a config file path in its initialiser (ie. `<YourServerClass>(client_type=<YourClientClass>, config_file="<path_here>")`). The path defaults to `./server_conf`.
 
 Associated with the server is the "`ClientConn`" class, which is a simple wrapper on a socket that stores status related data. Any subclass of `ClientConn` should provide an `__init__` function that accepts a socket object (the socket associated with that client) and loads default status values. Its status can later be loaded from a `STATUS` message.
+A `ClientConn` subclass can also provide a `is_ready()` method, for determining if the client is ready to be sent to.
 If no status data is required, the `ClientConn` class can be used as-is.
 
 ### Exposed Methods:
@@ -73,11 +74,12 @@ If no status data is required, the `ClientConn` class can be used as-is.
 - `get(block: bool = True, timeout: int | None = None, allow_none: bool = True)` - Retrieves an enqueued piece of data from the server. Uses the same blocking logic as the client (see above). If `allow_none` is `True`, returns `None` if no data is available. Otherwise, raises `Empty`.
 - `get_all()` - Retrieves all immediately available messages.
 - `put(msg: bytes, block: bool = False, timeout: int | None = None, send_all: bool = False)` - Sends the given message. If `send_all` is `True`, the message is sent to all clients. If `send_all` if `False`, uses `choose_dispatch` (see below) to select one connected client and send the message to that client. If `block` is `False`, will raise `Full` if no clients are available. If `block` is `True`, will wait up to `timeout` seconds (indefinitely if `timeout` is `None`) for a client to become available (during this time, the server will `poll`, but will not accept new connections). If the timeout is elapsed, will raise `Full`.
+- `put_to(msg: bytes, target: ClientConn | NetQueueServer.TARG_ALL, block: bool = False, timeout: int | None = None)` - Sends the given message to a chosen target. If `target` is the singleton object `NetQueueServer.TARG_ALL`, instead sends the message to all clients. Can be used if the server is no to do its own dispatching. Uses the same blocking logic as `put`.
 - `close()` - Closes the server. Signals all connected clients with `DISCONN`.
 
 ### User-Defined Methods:
 - `load_config(self, config_file: str)` - **REQUIRED**, should load config data from the given file into the `self.config` dictionary. Note that this dictionary uses some pre-defined values (see Config section).
-- `choose_dispatch(self)` - **REQUIRED**, should select and return a client object from among `self.clients` to dispatch a message to. May also update that client's status to reflect this dispatch. If no clients are available, returns `None`.
+- `choose_dispatch(self)` - Defaults to returning `None` (no client), for cases where dispathching is to be done independent of the server. If used, should select and return a client object from among `self.clients` to dispatch a message to. May also update that client's status to reflect this dispatch. If no clients are available, returns `None`.
 - `get_status(self) -> str | None` - Defaults to returning `None`. Should either return `None` (in which case no status messages are sent) or a string representing the status of this server. By default, server status is never used.
 - `handle_cl_status(self, client, data)` - Defaults to a no-op. Should handle the client's status data (received as a string), updating the provided `client` object (an instance of the chose `client_type`).
 - `handle_cl_enqueue(self, client, data)` - Defaults to just loading the data (as a string) into the local queue. Can be extended to (for example) update client status or deserialise the data. Should make use of the `self.local_queue` list whenever something is being enqueued to the server (which is used by `get`, `get_all`, etc.).
