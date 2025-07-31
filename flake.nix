@@ -1,5 +1,5 @@
 {
-    description = "RottnestPy Flake";
+    description = "net_queue flake";
 
     inputs = {
         nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
@@ -23,13 +23,10 @@
                         pythonPkgs.ipdb
                     ];
 
+                    # Add src folder to local python path (not how it should be done long-term)
                     shellHook = ''
                         export PYTHONPATH="$PYTHONPATH:$(pwd)/src/net_queue":
                     '';
-
-                    # Disable Nix wrapper features
-                    NIX_HARDENING_ENABLE = "";
-                    NIX_ENFORCE_NO_NATIVE = "";
                 };
             }
         );
