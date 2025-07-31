@@ -24,7 +24,7 @@
                     ];
 
                     shellHook = ''
-                        export PYTHONPATH="$PYTHONPATH:$(pwd)/src/worker_demo":
+                        export PYTHONPATH="$PYTHONPATH:$(pwd)/src/net_queue":
                     '';
 
                     # Disable Nix wrapper features
