@@ -96,7 +96,7 @@ class NetQueueClient(ABC):
             callback(key.fileobj)
 
     
-    def get(self, block: bool = True, timeout: int | None = None):
+    def get(self, block: bool = True, timeout: int | None = None, allow_none: bool = False):
         '''
             Attempts to retrieve an enqueued value from the client's connection
         '''
@@ -104,6 +104,8 @@ class NetQueueClient(ABC):
             self.poll(block=False)
             if self.local_queue:
                 return self.local_queue.pop(0)
+            if allow_none:
+                return None
             raise Empty("Queue has no available items, and blocking is disabled")
 
         timeout_remaining = timeout
@@ -118,6 +120,8 @@ class NetQueueClient(ABC):
 
         if self.local_queue:
             return self.local_queue.pop(0)
+        if allow_none:
+            return None
         raise Empty(f"Queue failed to retrieve an item within timeout {timeout}s")
 
 

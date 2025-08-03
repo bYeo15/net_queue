@@ -79,7 +79,7 @@ class NetQueueServer(ABC):
         self.conn_sel = selectors.DefaultSelector()
 
         # [List<ClientConn>] - list of connected clients
-        self.clients = []
+        self._clients = []
 
         # [DefaultSelector] - selector on connected clients
         self.client_sel = selectors.DefaultSelector()
@@ -125,11 +125,13 @@ class NetQueueServer(ABC):
         return None
 
 
-    def get_clients(self) -> list[ClientConn]:
-        '''
-            Fetches the list of clients
-        '''
-        return self.clients
+    @property
+    def clients(self):
+        return self._clients
+
+    @clients.setter
+    def clients(self, value):
+        self._clients = value
 
 
     def get_status(self) -> str | None:
@@ -265,13 +267,13 @@ class NetQueueServer(ABC):
                 client.sendall(msg)
         else:
             if block:
-                if client.is_ready():
-                    client.sendall(msg)
+                if target.is_ready():
+                    target.sendall(msg)
                 else:
                     raise Full(f"Target client {target} is not available for put_to")
             else:
                 timeout_remaining = timeout
-                while not client.is_ready() and (timeout_remaining is None or timeout_remaining > 0.0):
+                while not target.is_ready() and (timeout_remaining is None or timeout_remaining > 0.0):
                     poll_start = time.time()
 
                     self.poll(block=True, timeout=timeout_remaining)
@@ -279,8 +281,8 @@ class NetQueueServer(ABC):
                     if timeout_remaining is not None:
                         timeout_remaining -= (time.time() - poll_start)
 
-                if client.is_ready():
-                    client.sendall(msg)
+                if target.is_ready():
+                    target.sendall(msg)
                 else:
                     raise Full(f"Target client {target} is not available for put_to")
 

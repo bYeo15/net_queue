@@ -70,7 +70,7 @@ def create_msg(type: MsgTypes, *args) -> bytes:
 
 
 def create_conn_msg() -> bytes:
-    return struct.pack("!ihi", 2, MsgTypes.CONN.value)
+    return struct.pack("!ih", 2, MsgTypes.CONN.value)
 
 def create_disconn_msg() -> bytes:
     return struct.pack("!ih", 2, MsgTypes.DISCONN.value)
@@ -123,11 +123,11 @@ def get_status_data(msg_data):
     '''
         Extracts the data from a STATUS message
     '''
-    return (MsgTypes.STATUS, str(msg_data, "utf_8"))
+    return str(msg_data, "utf_8")
 
 
 def get_enqueued_data(msg_data):
     '''
         Extracts the data from an ENQUEUE message
     '''
-    return (MsgTypes.ENQUEUE, (str(data, "utf_8") for data in msg_data.split(b'\n')))
+    return tuple(str(data, "utf_8") for data in msg_data.split(b'\n'))
