@@ -24,9 +24,10 @@ The message types can be accessed from `protocol.MsgTypes.<type>`.
 - `STATUS <status>` - Status information, sends arbitrary data in `<status>`
 - `PING` - Health check request
 - `PONG` - Health check response
-- `ENQUEUE <data>[\n<data>]*` - Sends a group of data to be enqueued. By default, distinct pieces of data (ie. strings to be separated) are separated with newlines.
+- `ENQUEUE <data>[\n<data>]*` - Sends a group of data to be enqueued. By default, distinct pieces of data (ie. strings to be separated) are separated with newlines).
 
 Messages can be created with `protocol.create_msg(type: MsgTypes, *args)`, where `args` provides any data to be attached to the message.
+`ENQUEUE` messages are automatically created by the `put` methods if non-bytes data is provided as the message (strings/collections of strings will be encoded).
 
 
 
