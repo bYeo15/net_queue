@@ -2,9 +2,6 @@
     Network queue server end
 
     Handles a group of connected clients
-
-    PUT: Dispatch a message down to a client (can be set to dispatch to all or just one)
-    GET: Retrieves enqueued responses
 '''
 
 import socket
@@ -13,10 +10,8 @@ import selectors
 import struct
 from queue import Empty, Full
 
-from typing import Any
-from abc import ABC, abstractmethod
-
 from protocol import MsgTypes, decode_msg, create_msg 
+from errors import QueueStateMismatch
 
 
 class ClientConn():
@@ -26,7 +21,7 @@ class ClientConn():
 
         Expects an init that;
             - Accepts a socket as it's only argument and passes this up to
-              super().__init()
+              super().__init__()
             - Loads default values for status information 
               (to be updated by a STATUS message)
 
@@ -42,6 +37,12 @@ class ClientConn():
     def recv(self, n_bytes: int):
         return self.sock.recv(n_bytes)
 
+    def fileobj(self):
+        '''
+            Exposes the client's socket
+        '''
+        return self.sock
+
     def close(self):
         self.sock.close()
 
@@ -53,22 +54,21 @@ class ClientConn():
         return True
 
 
-class NetQueueServer(ABC):
+class NetQueueServer():
     '''
-        Abstract server end for the network queue
-
-        Users must provide "load_config" and "choose_dispatch" methods
-        Users should replace "get_status", "handle_cl_status"
-        and "handle_cl_enqueue" to suit their needs
-
-        TODO: Use state to handle events/prevent premature usage
-        TODO: Local put waiting queue
+        Server end for the network queue
     '''
 
     # [object] - singleton representing targetting all clients for put_to()
     TARG_ALL = object()
     
-    def __init__(self, client_type: type, config_file: str = "./server_conf"):
+    # [object] - state singletons
+    INACTIVE = object()     # Yet to be bound
+    READY = object()        # Bound, waiting for client(s)
+    CONNECTED = object()    # With client(s)
+    CLOSED = object()       # Closed - cannot be reused in any capacity
+    
+    def __init__(self, client_type: type = ClientConn):
         # [List<*>] - local backlog of received messages
         self.local_queue = []
 
@@ -84,32 +84,11 @@ class NetQueueServer(ABC):
         # [DefaultSelector] - selector on connected clients
         self.client_sel = selectors.DefaultSelector()
 
-        # [str] - state of the server
-        #   "inactive" : yet to be bound
-        #   "ready" : bound with no clients
-        #   "connected" : bound with clients
-        self.state = "inactive"
+        # [object] - state of the server (see above)
+        self.state = NetQueueServer.INACTIVE
 
         # [type] - the type of client object to use
         self.client_type = client_type
-
-        # [Dict<str><*>] - dictionary of config values
-        #   Comes with some default values (see below)
-        self.config : dict[str, Any] = {
-            # [int] - maximum number of bytes to be recv'd at once
-            "max_recv_size": 4096,
-        }
-
-        self.load_config(config_file)
-
-
-    @abstractmethod
-    def load_config(self, config_file: str): 
-        '''
-            Handles loading the configuration for the server
-            into the "config" dict
-        '''
-        raise NotImplementedError()
 
 
     def choose_dispatch(self) -> ClientConn | None:
@@ -119,10 +98,14 @@ class NetQueueServer(ABC):
 
             Returns None if no clients are available
 
-            Defaults to returning None, under the assumption that dispatch
-            will not be used (ie. put_to will be used)
+            Defaults to round-robin scheme
         '''
-        return None
+        if not self.clients:
+            return None
+
+        res = self.clients.pop(0)
+        self.clients.append(res)
+        return res
 
 
     @property
@@ -146,17 +129,23 @@ class NetQueueServer(ABC):
         '''
             Binds the server to a given port and address
         '''
+        if self.state is not NetQueueServer.INACTIVE:
+            raise QueueStateMismatch("Cannot rebind server")
+
         self.sock.bind((addr, port))
         self.sock.listen(5)
         self.sock.setblocking(False)
         self.conn_sel.register(self.sock, selectors.EVENT_READ)
-        self.state = "ready"
+        self.state = NetQueueServer.READY
 
 
     def poll(self, block: bool = False, timeout: int | float | None = None):
         '''
             Polls the server's connection(s) for new messages
         '''
+        if self.state is not NetQueueServer.CONNECTED:
+            raise QueueStateMismatch("Cannot poll a server until it is bound, and has at least one client") 
+
         client_events = self.client_sel.select(timeout=0 if not block else timeout)
         for key, mask in client_events:
             self.handle_cl_msg(key.data)
@@ -166,6 +155,9 @@ class NetQueueServer(ABC):
         '''
             Polls the server for new connections
         '''
+        if self.state not in (NetQueueServer.READY, NetQueueServer.CONNECTED):
+            raise QueueStateMismatch("Cannot accept connections until a server is bound")
+
         conn_events = self.conn_sel.select(timeout=0 if not block else timeout)
         for key, mask in conn_events:
             self.conn_accept()
@@ -178,10 +170,10 @@ class NetQueueServer(ABC):
         # TODO - accept timeout
         conn, addr = self.sock.accept()
         conn.setblocking(False)
-        client = ClientConn(conn)
+        client = self.client_type(conn)
         self.clients.append(client)
         self.client_sel.register(conn, selectors.EVENT_READ, client)
-        self.state = "connected"
+        self.state = NetQueueServer.CONNECTED
 
     
     def get(self, block: bool = True, timeout: int | None = None, allow_none: bool = True):
@@ -195,6 +187,9 @@ class NetQueueServer(ABC):
 
             If allow_none is True, will return None rather than throwing an error for an empty queue
         '''
+        if self.state is not NetQueueServer.CONNECTED:
+            raise QueueStateMismatch("Cannot get from server until it has at least one client")
+
         # Always perform an initial non-blocking poll
         self.poll(block=False)
 
@@ -227,6 +222,9 @@ class NetQueueServer(ABC):
         '''
             Retrieves all currently available items
         '''
+        if self.state is not NetQueueServer.CONNECTED:
+            raise QueueStateMismatch("Cannot get from server until it has at least one client")
+
         self.poll(block=False)
         res = self.local_queue
         self.local_queue = []
@@ -248,6 +246,9 @@ class NetQueueServer(ABC):
             Note that the queue will poll while waiting - this can result in new data being enqueued
             locally
         '''
+        if self.state is not NetQueueServer.CONNECTED:
+            raise QueueStateMismatch("Cannot put to server until it has at least one client")
+
         if send_all:
             self.put_to(msg, target=NetQueueServer.TARG_ALL, block=block, timeout=timeout)
         else:
@@ -262,6 +263,9 @@ class NetQueueServer(ABC):
         '''
             Dispatches a method to a known target
         '''
+        if self.state is not NetQueueServer.CONNECTED:
+            raise QueueStateMismatch("Cannot put to server until it has at least one client")
+
         if target is NetQueueServer.TARG_ALL:
             for client in self.clients:
                 client.sendall(msg)
@@ -287,8 +291,6 @@ class NetQueueServer(ABC):
                     raise Full(f"Target client {target} is not available for put_to")
 
 
-
-
     def close(self):
         '''
             Closes the server and cleans up open resources
@@ -309,6 +311,8 @@ class NetQueueServer(ABC):
 
         self.sock.close()
 
+        self.state = NetQueueServer.CLOSED
+
 
     def handle_cl_msg(self, client):
         msg_handlers = {
@@ -320,6 +324,8 @@ class NetQueueServer(ABC):
             MsgTypes.ENQUEUE: self.handle_cl_enqueue,
         }
 
+        # TODO : timeout on recv
+
         # Get message length
         msg_len_b = client.recv(4)
         msg_len = struct.unpack("!i", msg_len_b)[0]
@@ -328,10 +334,11 @@ class NetQueueServer(ABC):
         msg_fragments = []
 
         while msg_len > 0:
-            frag = client.recv(min(self.config["max_recv_size"], msg_len))
+            frag = client.recv(min(4096, msg_len))
             if frag:
                 msg_len -= len(frag)
                 msg_fragments.append(frag)
+            # TODO : No fragment means disconnect
 
         msg = b''.join(msg_fragments)
 
@@ -352,10 +359,15 @@ class NetQueueServer(ABC):
 
     def handle_cl_disconn(self, client, data):
         '''
-            DISCONN : Remove client and resort worker pool
+            DISCONN : Remove client from list and close it
+                      If the server has no clients, return to "READY" state
         '''
         self.clients.remove(client)
         client.close()
+        self.client_sel.unregister(client.fileobj())
+
+        if not self.clients:
+            self.state = NetQueueServer.READY
 
 
     def handle_cl_status(self, client, data):

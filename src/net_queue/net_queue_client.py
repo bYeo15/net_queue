@@ -2,9 +2,6 @@
     Client end of a networked queue
 
     Handles a connection to a single server
-
-    PUT: Send response upward to parent
-    GET: Retrieve job from parent
 '''
 
 
@@ -14,24 +11,23 @@ import selectors
 import struct
 from queue import Empty, Full
 
-from abc import ABC, abstractmethod
 from typing import Any
 
 from protocol import MsgTypes, decode_msg, create_msg
+from errors import QueueStateMismatch
 
 
-class NetQueueClient(ABC):
+class NetQueueClient():
     '''
-        Abstract client end for the network queue
-
-        Users must provide "load_config" method
-        Users should replace "get_status" "handle_sv_status" 
-        and "handle_sv_enqueue" to suit their needs
-        
-        TODO : Use state to handle errors/prevent premature usage
+        Client end for the network queue
     '''
 
-    def __init__(self, config_file: str= "./client_conf"):
+    # [object] - state singletons
+    INACTIVE = object()     # Yet to be connected
+    CONNECTED = object()    # Connected to server
+    CLOSED = object()       # Closed - cannot be reused
+
+    def __init__(self):
         # [List<str>] - local backlog of received messages
         self.local_queue = []
 
@@ -41,29 +37,8 @@ class NetQueueClient(ABC):
         # [DefaultSelector] - selector on server connection
         self.server_sel = selectors.DefaultSelector()
 
-        # [str] - state of the client
-        #   "inactive" : yet to connect
-        #   "connected" : connected to server
-        self.state = "inactive"
-
-        # [Dict<str><*>] - dictionary of config values
-        #   Comes with some default values (see below)
-        self.config : dict[str, Any] = {
-            # [int] - maximum number of bytes to be recv'd at once
-            "max_recv_size": 4096,
-            
-        }
-
-        self.load_config(config_file)
-
-
-    @abstractmethod
-    def load_config(self, config_file: str):
-        '''
-            Handles loading the configuration for the client
-            into the "config" dict
-        '''
-        raise NotImplementedError()
+        # [object] - state of the client (see above)
+        self.state = NetQueueClient.INACTIVE 
 
 
     def get_status(self) -> str | None:
@@ -79,6 +54,9 @@ class NetQueueClient(ABC):
             Connects the client to a given server
             Sends a connection message that broadcasts the number of workers
         '''
+        if self.state is not NetQueueClient.INACTIVE:
+            raise QueueStateMismatch("Cannot connect an already connected client")
+
         self.sock.connect((addr, port))
         self.sock.setblocking(False)
         self.server_sel.register(self.sock, selectors.EVENT_READ, self.handle_sv_msg)
@@ -90,6 +68,9 @@ class NetQueueClient(ABC):
         '''
             Polls the client's connection
         '''
+        if self.state is not NetQueueClient.CONNECTED:
+            raise QueueStateMismatch("Cannot poll a client until it is connected")
+
         server_events = self.server_sel.select(timeout=0 if not block else timeout)
         for key, mask in server_events:
             callback = key.data
@@ -100,6 +81,9 @@ class NetQueueClient(ABC):
         '''
             Attempts to retrieve an enqueued value from the client's connection
         '''
+        if self.state is not NetQueueClient.CONNECTED:
+            raise QueueStateMismatch("Cannot get from a client until it is connected")
+
         if not block:
             self.poll(block=False)
             if self.local_queue:
@@ -129,6 +113,9 @@ class NetQueueClient(ABC):
         '''
             Retrieves all currently available messages
         '''
+        if self.state is not NetQueueClient.CONNECTED:
+            raise QueueStateMismatch("Cannot get from a client until it is connected")
+        
         self.poll(block=False)
         res = self.local_queue
         self.local_queue = []
@@ -139,6 +126,9 @@ class NetQueueClient(ABC):
         '''
             Sends a message to the connected server
         '''
+        if self.state is not NetQueueClient.CONNECTED:
+            raise QueueStateMismatch("Cannot put to a client until it is connected")
+
         self.sock.sendall(msg)
 
 
@@ -154,6 +144,8 @@ class NetQueueClient(ABC):
 
         self.sock.close()
 
+        self.state = NetQueueClient.CLOSED
+
 
     def handle_sv_msg(self, sock):
         msg_handlers = {
@@ -165,6 +157,8 @@ class NetQueueClient(ABC):
             MsgTypes.ENQUEUE: self.handle_sv_enqueue,
         }
 
+        # TODO : timeout on recv
+
         # Get message length
         msg_len = struct.unpack("!i", sock.recv(4))[0]
         
@@ -172,10 +166,11 @@ class NetQueueClient(ABC):
         msg_fragments = []
 
         while msg_len > 0:
-            frag = sock.recv(min(self.config["max_recv_size"], msg_len))
+            frag = sock.recv(min(4096, msg_len))
             if frag:
                 msg_len -= len(frag)
                 msg_fragments.append(frag)
+            # TODO : No fragment means disconnect
 
         msg = b''.join(msg_fragments)
 
@@ -191,7 +186,7 @@ class NetQueueClient(ABC):
         '''
             CONN : Note connected state and send initial status
         '''
-        self.state = "connected"
+        self.state = NetQueueClient.CONNECTED
         status = self.get_status()
         if status is not None:
             self.put(create_msg(MsgTypes.STATUS, status))

@@ -1,0 +1,2 @@
+class QueueStateMismatch(Exception):
+    pass
