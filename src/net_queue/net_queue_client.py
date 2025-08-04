@@ -57,6 +57,7 @@ class NetQueueClient():
         if self.state is not NetQueueClient.INACTIVE:
             raise QueueStateMismatch("Cannot connect an already connected client")
 
+        self.sock.settimeout(10)
         self.sock.connect((addr, port))
         self.sock.setblocking(False)
         self.server_sel.register(self.sock, selectors.EVENT_READ, self.handle_sv_msg)
@@ -171,8 +172,6 @@ class NetQueueClient():
             MsgTypes.ENQUEUE: self.handle_sv_enqueue,
         }
 
-        # TODO : timeout on recv
-
         # Get message length
         msg_len = struct.unpack("!i", sock.recv(4))[0]
         
@@ -184,7 +183,8 @@ class NetQueueClient():
             if frag:
                 msg_len -= len(frag)
                 msg_fragments.append(frag)
-            # TODO : No fragment means disconnect
+            else:
+                raise ConnectionResetError(f"Lost connection during recv of total length {msg_len}, got partial msg {msg_fragments}")
 
         msg = b''.join(msg_fragments)
 

@@ -180,7 +180,6 @@ class NetQueueServer():
         '''
             Accepts a connection from a client
         '''
-        # TODO - accept timeout
         conn, addr = self.sock.accept()
         conn.setblocking(False)
         client = self.client_type(conn)
@@ -347,8 +346,6 @@ class NetQueueServer():
             MsgTypes.ENQUEUE: self.handle_cl_enqueue,
         }
 
-        # TODO : timeout on recv
-
         # Get message length
         msg_len_b = client.recv(4)
         msg_len = struct.unpack("!i", msg_len_b)[0]
@@ -361,7 +358,8 @@ class NetQueueServer():
             if frag:
                 msg_len -= len(frag)
                 msg_fragments.append(frag)
-            # TODO : No fragment means disconnect
+            else:
+                raise ConnectionResetError(f"Lost connection during recv of total length {msg_len}, got partial msg {msg_fragments}")
 
         msg = b''.join(msg_fragments)
 
