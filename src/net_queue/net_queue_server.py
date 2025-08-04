@@ -39,17 +39,7 @@ class ClientConn():
             Wrapper on socket sendall that can handle trivial serialisation
             via the protocol
         '''
-        bdata = data
-
-        if not isinstance(data, bytes):
-            if not isinstance(data, str) and isinstance(data, Sequence):
-                # Try to unpack Sequence-style data
-                bdata = create_msg(MsgTypes.ENQUEUE, *data)
-            else:
-                # Otherwise, assume data is a string
-                bdata = create_msg(MsgTypes.ENQUEUE, data)
-
-        self.sock.sendall(bdata)
+        self.sock.sendall(data)
 
 
     def recv(self, n_bytes: int):
@@ -288,14 +278,23 @@ class NetQueueServer():
         '''
         if self.state is not NetQueueServer.CONNECTED:
             raise QueueStateMismatch("Cannot put to server until it has at least one client")
+        bmsg = msg
+
+        if not isinstance(msg, bytes):
+            if not isinstance(msg, str) and isinstance(msg, Sequence):
+                # Try to unpack Sequence-style data
+                bmsg = create_msg(MsgTypes.ENQUEUE, *msg)
+            else:
+                # Otherwise, assume data is a string
+                bmsg = create_msg(MsgTypes.ENQUEUE, msg)
 
         if target is NetQueueServer.TARG_ALL:
             for client in self.clients:
-                client.sendall(msg)
+                client.sendall(bmsg)
         else:
             if block:
                 if target.is_ready():
-                    target.sendall(msg)
+                    target.sendall(bmsg)
                 else:
                     raise Full(f"Target client {target} is not available for put_to")
             else:
@@ -309,7 +308,7 @@ class NetQueueServer():
                         timeout_remaining -= (time.time() - poll_start)
 
                 if target.is_ready():
-                    target.sendall(msg)
+                    target.sendall(bmsg)
                 else:
                     raise Full(f"Target client {target} is not available for put_to")
 
