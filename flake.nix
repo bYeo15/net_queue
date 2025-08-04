@@ -18,9 +18,6 @@
                 devShell = pkgs.mkShell {
                     packages = with pkgs; [
                         python
-                        pythonPkgs.numpy
-                        pythonPkgs.pytest
-                        pythonPkgs.ipdb
                     ];
 
                     # Add src folder to local python path (not how it should be done long-term)
