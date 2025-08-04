@@ -74,8 +74,3 @@ If no status data is required, the `ClientConn` class can be used as-is.
 - `get_status(self) -> str | None` - Defaults to returning `None`. Should either return `None` (in which case no status messages are sent) or a string representing the status of this server. By default, server status is never used.
 - `handle_cl_status(self, client, data)` - Defaults to a no-op. Should handle the client's status data (received as a string), updating the provided `client` object (an instance of the chose `client_type`).
 - `handle_cl_enqueue(self, client, data)` - Defaults to just loading the data (as a string) into the local queue. Can be extended to (for example) update client status or deserialise the data. Should make use of the `self.local_queue` list whenever something is being enqueued to the server (which is used by `get`, `get_all`, etc.).
-
-
-## Config
-
-<TODO>
