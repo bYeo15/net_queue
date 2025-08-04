@@ -319,7 +319,8 @@ class NetQueueServer():
             Signals all connected clients that the server is disconnecting
         '''
         # Signal all clients to tell them the server is closing
-        self.put(create_msg(MsgTypes.DISCONN), send_all=True)
+        if self.clients:
+            self.put(create_msg(MsgTypes.DISCONN), send_all=True)
     
         # Close selectors
         self.conn_sel.close()

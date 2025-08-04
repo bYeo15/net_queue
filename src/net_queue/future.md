@@ -1,14 +1,7 @@
---- Arbitrary msg packing (unify JOB & RESP)
---- Figure out worker counts (order vs STATUS msg)
-    --- STATUS message
-- Local queue for server put (as opposed to failing)
-    - ie. Local "waiting to be sent" queue as well as "waiting to be received"
-    - Pair with below thread?
 - Message recv error handling (timeout on recv to ensure half-sent messages don't create a block)
 - Distinct thread for polling, etc. (run separate from main process?)
+    - Similar thread for accepting connections
+    - Alternative: `asyncio`?
 - Better connection logic
 - Handle errors, disconnects, etc. better
-- Config file
-    - Format (TOML, JSON?)
-    - Properties
-    - Auto-bind, accept (server) and connect (client)
+    - Catch common network exceptions
