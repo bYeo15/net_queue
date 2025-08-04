@@ -1,7 +1,0 @@
-- Message recv error handling (timeout on recv to ensure half-sent messages don't create a block)
-- Distinct thread for polling, etc. (run separate from main process?)
-    - Similar thread for accepting connections
-    - Alternative: `asyncio`?
-- Better connection logic
-- Handle errors, disconnects, etc. better
-    - Catch common network exceptions
