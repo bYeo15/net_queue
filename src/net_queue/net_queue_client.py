@@ -9,9 +9,9 @@ import socket
 import time
 import selectors
 import struct
-from queue import Empty, Full
 
-from typing import Any
+from queue import Empty
+from collections.abc import Sequence
 
 from protocol import MsgTypes, decode_msg, create_msg
 from errors import QueueStateMismatch
@@ -122,14 +122,27 @@ class NetQueueClient():
         return res
 
 
-    def put(self, msg: bytes):
+    def put(self, msg):
         '''
             Sends a message to the connected server
+
+            Attempts simple data serialisation for msg
         '''
         if self.state is not NetQueueClient.CONNECTED:
             raise QueueStateMismatch("Cannot put to a client until it is connected")
 
-        self.sock.sendall(msg)
+        bmsg = msg
+
+        if not isinstance(msg, bytes):
+            if not isinstance(msg, str) and isinstance(msg, Sequence):
+                # Try to unpack Sequence-style data
+                bmsg = create_msg(MsgTypes.ENQUEUE, *msg)
+            else:
+                # Otherwise, assume data is a string
+                bmsg = create_msg(MsgTypes.ENQUEUE, msg)
+
+
+        self.sock.sendall(bmsg)
 
 
     def close(self, signal_disconn: bool = True):
@@ -190,6 +203,7 @@ class NetQueueClient():
         status = self.get_status()
         if status is not None:
             self.put(create_msg(MsgTypes.STATUS, status))
+
 
     def handle_sv_disconn(self, data):
         '''

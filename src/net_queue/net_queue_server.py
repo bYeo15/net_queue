@@ -8,7 +8,9 @@ import socket
 import time
 import selectors
 import struct
+
 from queue import Empty, Full
+from collections.abc import Sequence
 
 from protocol import MsgTypes, decode_msg, create_msg 
 from errors import QueueStateMismatch
@@ -31,11 +33,28 @@ class ClientConn():
         # [socket] - the socket associated with this client connection
         self.sock = sock
 
+
     def sendall(self, data):
-        self.sock.sendall(data)
+        '''
+            Wrapper on socket sendall that can handle trivial serialisation
+            via the protocol
+        '''
+        bdata = data
+
+        if not isinstance(data, bytes):
+            if not isinstance(data, str) and isinstance(data, Sequence):
+                # Try to unpack Sequence-style data
+                bdata = create_msg(MsgTypes.ENQUEUE, *data)
+            else:
+                # Otherwise, assume data is a string
+                bdata = create_msg(MsgTypes.ENQUEUE, data)
+
+        self.sock.sendall(bdata)
+
 
     def recv(self, n_bytes: int):
         return self.sock.recv(n_bytes)
+
 
     def fileobj(self):
         '''
@@ -43,8 +62,10 @@ class ClientConn():
         '''
         return self.sock
 
+
     def close(self):
         self.sock.close()
+
 
     def is_ready(self):
         '''
@@ -52,6 +73,7 @@ class ClientConn():
             To be overriden as relevant
         '''
         return True
+
 
 
 class NetQueueServer():
@@ -111,6 +133,7 @@ class NetQueueServer():
     @property
     def clients(self):
         return self._clients
+
 
     @clients.setter
     def clients(self, value):
