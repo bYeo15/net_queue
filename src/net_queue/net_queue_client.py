@@ -60,6 +60,7 @@ class NetQueueClient():
         self.sock.connect((addr, port))
         self.sock.setblocking(False)
         self.server_sel.register(self.sock, selectors.EVENT_READ, self.handle_sv_msg)
+        self.state = NetQueueClient.CONNECTED
 
         self.put(create_msg(MsgTypes.CONN))
 
