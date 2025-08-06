@@ -57,7 +57,7 @@ class ClientConn():
         self.sock.close()
 
 
-    def is_ready(self):
+    def is_ready(self) -> bool:
         '''
             Determines if this client is available to receive messages
             To be overriden as relevant
